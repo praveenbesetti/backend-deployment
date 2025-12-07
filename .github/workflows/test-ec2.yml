@@ -26,9 +26,26 @@ jobs:
       - name: Deploy application
         run: |
           ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
-            cd /var/www/backend-deployment &&
-            git fetch origin develop &&
-            git reset --hard origin/develop &&
-            npm install --production &&
+            set -e
+            # Ensure deployment directory exists
+            mkdir -p /var/www/backend-deployment
+            cd /var/www/backend-deployment
+
+            # Fetch latest code from develop branch
+            if [ ! -d .git ]; then
+              git clone https://github.com/praveenbesetti/backend-deployment.git .
+              git checkout develop
+            else
+              git fetch origin develop
+              git reset --hard origin/develop
+            fi
+
+            # Install production dependencies
+            npm install --production
+
+            # Restart app with PM2 (start if not running)
             pm2 restart backend || pm2 start server.js --name backend
+
+            # Save PM2 process list
+            pm2 save
           "
