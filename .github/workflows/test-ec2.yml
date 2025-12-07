@@ -1,16 +1,20 @@
-name: Test EC2 Connection
+name: Deploy to EC2 (dev branch)
 
 on:
-  workflow_dispatch:   # lets you trigger manually from GitHub UI
+  push:
+    branches:
+      - develop   # trigger only when pushing to dev branch
 
 jobs:
-  test:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repo
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 2. Setup SSH
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -18,6 +22,13 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Test EC2 connection
+      # 3. Deploy to EC2
+      - name: Deploy application
         run: |
-          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo '✅ Connected to EC2 from GitHub Actions!'"
+          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
+            cd /var/www/backend-deployment &&
+            git fetch origin dev &&
+            git reset --hard origin/develop &&
+            npm install --production &&
+            pm2 restart all || pm2 start server.js
+          "
