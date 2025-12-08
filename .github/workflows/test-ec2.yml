@@ -29,7 +29,7 @@ jobs:
           # Add the EC2 host to known_hosts to prevent interactive prompts
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      # 3. Deploy to EC2
+      # 3. Deploy to EC2 (Corrected, single step definition)
       - name: Deploy application
         run: |
           ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
@@ -39,7 +39,7 @@ jobs:
             DEPLOY_DIR='/var/www/backend-deployment'
             
             # Use 'mkdir -p' which only creates the directory if it doesn't exist
-            # IMPORTANT: The user must have permissions to run this OR it must be pre-created.
+            # This requires the deployment user to have write permission to /var/www/
             mkdir -p $DEPLOY_DIR
             cd $DEPLOY_DIR
 
@@ -58,13 +58,11 @@ jobs:
               git reset --hard origin/develop
             fi
 
-            # Install production dependencies (runs only after successful git operations)
+            # Install production dependencies
             echo 'Installing production dependencies...'
             npm install --production
 
             # Restart the application using PM2
-            # 'pm2 restart' will restart the app named 'backend' if it exists.
-            # '|| pm2 start...' will run only if 'pm2 restart' fails (i.e., first run).
             echo 'Restarting/Starting application with PM2...'
             pm2 restart backend || pm2 start server.js --name backend
 
