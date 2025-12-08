@@ -30,44 +30,42 @@ jobs:
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
       # 3. Deploy to EC2 (Corrected, single step definition)
+      # 3. Deploy to EC2 (Applying the fix)
       - name: Deploy application
         run: |
           ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
             # Stop immediately if any command fails
             set -e
             
+            # ESCAPE THE DOLLAR SIGN for the remote variable
             DEPLOY_DIR='/var/www/backend-deployment'
             
-            # Use 'mkdir -p' which only creates the directory if it doesn't exist
-            # This requires the deployment user to have write permission to /var/www/
-            mkdir -p $DEPLOY_DIR
-            cd $DEPLOY_DIR
-
-            # Check if .git directory exists (first deployment or subsequent deployment)
+            # The local shell expands ${{ secrets.EC2_USER }} and ${{ secrets.EC2_HOST }}
+            # The remote shell expands \$DEPLOY_DIR
+            mkdir -p \$DEPLOY_DIR
+            cd \$DEPLOY_DIR
+            
+            # Now, escape all subsequent remote variables too
             if [ ! -d .git ]; then
               echo 'Performing initial git clone...'
-              # Clone the repository
               git clone https://github.com/praveenbesetti/backend-deployment.git .
-              # Checkout the specific branch
               git checkout develop
             else
               echo 'Updating existing repository...'
-              # Fetch the latest code from the develop branch
               git fetch origin develop
-              # Hard reset to ensure the work tree matches the remote branch exactly
               git reset --hard origin/develop
             fi
 
-            # Install production dependencies
             echo 'Installing production dependencies...'
             npm install --production
 
-            # Restart the application using PM2
             echo 'Restarting/Starting application with PM2...'
+            # Use single quotes around the entire remote script (alternative fix) 
+            # OR just ensure variables are escaped. We'll use the latter for consistency.
             pm2 restart backend || pm2 start server.js --name backend
 
-            # Save PM2 process list so processes survive a reboot
             pm2 save
             
             echo 'Deployment successful.'
           "
+    
