@@ -3,41 +3,73 @@ name: Deploy to EC2 (develop branch)
 on:
   push:
     branches:
-      - develop   # trigger only when pushing to develop branch
+      - develop  # trigger only when pushing to develop branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      NODE_ENV: ${{ secrets.NODE_ENV }}
-      PORT: ${{ secrets.PORT }}
-      MONGO_URI: ${{ secrets.MONGO_URI }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      JWT_SECRET: ${{ secrets.JWT_SECRET }}
-      API_KEY: ${{ secrets.API_KEY }}
-      REDIS_URL: ${{ secrets.REDIS_URL }}
-      # … add all 20+ secrets here
+
     steps:
-      - name: Setup SSH
+      # 1. Checkout repo
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Setup SSH
+      - name: Setup SSH and Known Hosts
         run: |
+          # Create .ssh directory if it doesn't exist
           mkdir -p ~/.ssh
+          
+          # Write the private key from secrets to a file
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          
+          # Set correct permissions for the key
           chmod 600 ~/.ssh/id_rsa
+          
+          # Add the EC2 host to known_hosts to prevent interactive prompts
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy
+      # 3. Deploy to EC2
+      - name: Deploy application
         run: |
           ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
+            # Stop immediately if any command fails
             set -e
-            sudo rm -rf /var/www/backend-deployment
-            git clone -b develop https://github.com/praveenbesetti/backend-deployment.git /var/www/backend-deployment
-            cd /var/www/backend-deployment
+            
+            DEPLOY_DIR='/var/www/backend-deployment'
+            
+            # Use 'mkdir -p' which only creates the directory if it doesn't exist
+            # IMPORTANT: The user must have permissions to run this OR it must be pre-created.
+            mkdir -p $DEPLOY_DIR
+            cd $DEPLOY_DIR
 
+            # Check if .git directory exists (first deployment or subsequent deployment)
+            if [ ! -d .git ]; then
+              echo 'Performing initial git clone...'
+              # Clone the repository
+              git clone https://github.com/praveenbesetti/backend-deployment.git .
+              # Checkout the specific branch
+              git checkout develop
+            else
+              echo 'Updating existing repository...'
+              # Fetch the latest code from the develop branch
+              git fetch origin develop
+              # Hard reset to ensure the work tree matches the remote branch exactly
+              git reset --hard origin/develop
+            fi
+
+            # Install production dependencies (runs only after successful git operations)
+            echo 'Installing production dependencies...'
             npm install --production
 
-            pm2 restart backend --update-env || pm2 start server.js --name backend --update-env
+            # Restart the application using PM2
+            # 'pm2 restart' will restart the app named 'backend' if it exists.
+            # '|| pm2 start...' will run only if 'pm2 restart' fails (i.e., first run).
+            echo 'Restarting/Starting application with PM2...'
+            pm2 restart backend || pm2 start server.js --name backend
+
+            # Save PM2 process list so processes survive a reboot
             pm2 save
-            sudo systemctl reload nginx
+            
+            echo 'Deployment successful.'
           "
