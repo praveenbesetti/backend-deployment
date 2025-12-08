@@ -31,7 +31,7 @@ jobs:
         run: |
           ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
             set -e
-            rm -rf /var/www/backend-deployment
+            sudo rm -rf /var/www/backend-deployment
             git clone -b develop https://github.com/praveenbesetti/backend-deployment.git /var/www/backend-deployment
             cd /var/www/backend-deployment
 
