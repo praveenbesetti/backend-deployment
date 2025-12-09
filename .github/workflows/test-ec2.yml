@@ -8,7 +8,17 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    secrets: inherit   # all GitHub secrets available dynamically
+
+    # Expose all secrets to runner environment
+    env:
+      AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
 
     steps:
       - name: Checkout code
@@ -30,18 +40,23 @@ jobs:
             cd $DEPLOY_DIR
 
             if [ ! -d .git ]; then
+              echo 'Performing initial git clone...'
               git clone https://github.com/praveenbesetti/backend-deployment.git .
               git checkout develop
             else
+              echo 'Updating existing repository...'
               git fetch origin develop
               git reset --hard origin/develop
             fi
 
+            echo 'Installing production dependencies...'
             npm install --production
 
+            echo 'Restarting/Starting application with PM2...'
             # Forward ALL secrets dynamically at runtime
             $(env | grep -v 'PATH' | grep -v 'HOME' | grep -v 'SHELL') \
             pm2 restart backend --update-env || pm2 start server.js --name backend --update-env
 
             pm2 save   # optional: persist env snapshot
+            echo 'Deployment successful.'
           EOF
