@@ -9,7 +9,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    # Expose all secrets to runner environment
     env:
       AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
       AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
@@ -33,11 +32,11 @@ jobs:
 
       - name: Deploy application
         run: |
-          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          ssh -T ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
             set -e
             DEPLOY_DIR="/var/www/backend-deployment"
-            mkdir -p $DEPLOY_DIR
-            cd $DEPLOY_DIR
+            mkdir -p \$DEPLOY_DIR
+            cd \$DEPLOY_DIR
 
             if [ ! -d .git ]; then
               echo 'Performing initial git clone...'
@@ -50,11 +49,16 @@ jobs:
             fi
 
             echo 'Installing production dependencies...'
-            npm install --production
+            npm install --omit=dev
 
             echo 'Restarting/Starting application with PM2...'
-            # Forward ALL secrets dynamically at runtime
-            $(env | grep -v 'PATH' | grep -v 'HOME' | grep -v 'SHELL') \
+            # Export secrets into EC2 runtime before pm2
+            export AWS_ACCESS_KEY="${AWS_ACCESS_KEY}"
+            export AWS_SECRET_KEY="${AWS_SECRET_KEY}"
+            export AWS_REGION="${AWS_REGION}"
+            export MONGO_URI="${MONGO_URI}"
+            export S3_BUCKET="${S3_BUCKET}"
+
             pm2 restart backend --update-env || pm2 start server.js --name backend --update-env
 
             pm2 save   # optional: persist env snapshot
