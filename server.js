@@ -12,6 +12,10 @@ app.use(cors({
   credentials: true
 }));
 
+// root route
+app.get("/", (req, res) => {
+  res.send("hello this is server");
+});
 
 // routes
 app.use("/api", userRoutes);
