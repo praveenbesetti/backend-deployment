@@ -3,69 +3,45 @@ name: Deploy to EC2 (develop branch)
 on:
   push:
     branches:
-      - develop  # trigger only when pushing to develop branch
+      - develop
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    secrets: inherit   # all GitHub secrets available dynamically
 
     steps:
-      # 1. Checkout repo
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Setup SSH
-      - name: Setup SSH and Known Hosts
+      - name: Setup SSH
         run: |
-          # Create .ssh directory if it doesn't exist
           mkdir -p ~/.ssh
-          
-          # Write the private key from secrets to a file
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          
-          # Set correct permissions for the key
           chmod 600 ~/.ssh/id_rsa
-          
-          # Add the EC2 host to known_hosts to prevent interactive prompts
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      # 3. Deploy to EC2 (Corrected, single step definition)
-      # 3. Deploy to EC2 (Applying the fix)
       - name: Deploy application
         run: |
-          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
-            # Stop immediately if any command fails
+          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
-            
-            # ESCAPE THE DOLLAR SIGN for the remote variable
-            DEPLOY_DIR='/var/www/backend-deployment'
-            
-            # The local shell expands ${{ secrets.EC2_USER }} and ${{ secrets.EC2_HOST }}
-            # The remote shell expands \$DEPLOY_DIR
-            mkdir -p \$DEPLOY_DIR
-            cd \$DEPLOY_DIR
-            
-            # Now, escape all subsequent remote variables too
+            DEPLOY_DIR="/var/www/backend-deployment"
+            mkdir -p $DEPLOY_DIR
+            cd $DEPLOY_DIR
+
             if [ ! -d .git ]; then
-              echo 'Performing initial git clone...'
               git clone https://github.com/praveenbesetti/backend-deployment.git .
               git checkout develop
             else
-              echo 'Updating existing repository...'
               git fetch origin develop
               git reset --hard origin/develop
             fi
 
-            echo 'Installing production dependencies...'
             npm install --production
 
-            echo 'Restarting/Starting application with PM2...'
-            # Use single quotes around the entire remote script (alternative fix) 
-            # OR just ensure variables are escaped. We'll use the latter for consistency.
-            pm2 restart backend || pm2 start server.js --name backend
+            # Forward ALL secrets dynamically at runtime
+            $(env | grep -v 'PATH' | grep -v 'HOME' | grep -v 'SHELL') \
+            pm2 restart backend --update-env || pm2 start server.js --name backend --update-env
 
-            pm2 save
-            
-            echo 'Deployment successful.'
-          "
-    
+            pm2 save   # optional: persist env snapshot
+          EOF
