@@ -7,10 +7,11 @@ const userRoutes = require("./routes/userRoutes");
 const app = express();
 app.use(express.json());
 app.use(cors({
-  origin: ["http://localhost:3000",
-  "https://d2kf8z7jw5oc5i.cloudfront.net/"
-          ]
-  methods: "GET,POST",
+  origin: [
+    "http://localhost:3000",
+    "https://d2kf8z7jw5oc5i.cloudfront.net"
+  ],
+  methods: ["GET", "POST"],
   credentials: true
 }));
 
