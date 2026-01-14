@@ -4,7 +4,7 @@ const AWS=require("aws-sdk")
 exports.getUploadURL = async (req, res) => {
   try {
     const { uploadURL, key } = generateUploadURL();
-    console.log(key);
+    console.log(uploadURL,key);
     const imageUrl = `https://${process.env.S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
     res.json({ uploadURL, imageUrl });
   } catch (err) {
