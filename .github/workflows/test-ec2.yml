@@ -16,7 +16,6 @@ jobs:
       - name: Install dependencies
         run: npm install
    
-
   deploy:
     needs: test
     runs-on: ubuntu-latest
@@ -29,31 +28,31 @@ jobs:
         with:
           host: ${{ secrets.GCP_VM_IP }}
           username: ${{ secrets.GCP_USERNAME }}
-          key: ${{secrets.  GCP_SSH_KEY}}
-
+          key: ${{ secrets.GCP_SSH_KEY }} # Fixed the space here
           script: |
             # 1. Setup path variables
             APP_DIR="/home/${{ secrets.GCP_USERNAME }}/my-app"
             
-            # 2. Backup .env (Crucial so you don't lose DB passwords)
+            # 2. Backup .env if it exists
             if [ -f "$APP_DIR/.env" ]; then
                 cp "$APP_DIR/.env" ~/env_backup
             fi
 
-            # 3. Delete and Fresh Clone
+            # 3. Delete old folders and Fresh Clone
             rm -rf "$APP_DIR"
-            git clone https://github.com/${{ github.repository }}.git "$APP_DIR"
+            git clone -b develop https://github.com/${{ github.repository }}.git "$APP_DIR"
             
             # 4. Restore .env
             if [ -f ~/env_backup ]; then
                 mv ~/env_backup "$APP_DIR/.env"
             fi
 
-            # 5. Build and Start
+            # 5. Install and Start
             cd "$APP_DIR"
             npm install --production
             
-            # Restart if exists, otherwise start new
-            # Change 'index.js' to your main file name (e.g., server.js)
-            pm2 restart my-server || pm2 start index.js --name "my-server"
+            # 6. PM2 Management
+            # We use 'delete' then 'start' to ensure a clean slate every time
+            pm2 delete my-server || true
+            pm2 start index.js --name "my-server"
             pm2 save
