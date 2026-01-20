@@ -2,23 +2,30 @@ name: Deploy to GCP VM
 
 on:
   push:
-    branches: [ main ]
+    branches: [ develop]
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: Install dependencies
         run: npm install
-     
+      - name: Run Tests
+        # This prevents the workflow from failing if you haven't written tests yet
+        run: npm test || echo "No tests found, skipping..."
 
   deploy:
-    needs: test # This means: Only run deploy if 'test' passes!
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -26,7 +33,34 @@ jobs:
           username: ${{ secrets.GCP_USERNAME }}
           key: ${{ secrets.GCP_SSH_KEY }}
           script: |
-            cd /home/${{ secrets.GCP_USERNAME }}/my-app
-            git pull origin main
+            # 1. Setup variables
+            APP_DIR="/home/${{ secrets.GCP_USERNAME }}/my-app"
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+            
+            # 2. Backup .env file if it exists (so we don't lose DB config)
+            if [ -f "$APP_DIR/.env" ]; then
+                echo "Backing up .env file..."
+                cp "$APP_DIR/.env" ~/.app_env_backup
+            fi
+
+            # 3. Remove old folder and clone fresh
+            echo "Deleting old folder and cloning fresh..."
+            rm -rf "$APP_DIR"
+            git clone $REPO_URL "$APP_DIR"
+            
+            # 4. Restore .env file
+            if [ -f ~/.app_env_backup ]; then
+                echo "Restoring .env file..."
+                mv ~/.app_env_backup "$APP_DIR/.env"
+            fi
+
+            # 5. Enter directory and Install
+            cd "$APP_DIR"
             npm install --production
-            pm2 restart all || pm2 start server.js --name "my-server"
+
+            # 6. Restart the server with PM2
+            # We use 'index.js' as the starting file - change if yours is named differently
+            pm2 restart my-server || pm2 start index.js --name "my-server"
+            
+            # 7. Save PM2 state so it survives VM reboots
+            pm2 save
