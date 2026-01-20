@@ -29,4 +29,4 @@ jobs:
             cd /home/${{ secrets.GCP_USERNAME }}/my-app
             git pull origin main
             npm install --production
-            pm2 restart all || pm2 start index.js --name "my-server"
+            pm2 restart all || pm2 start server.js --name "my-server"
