@@ -15,6 +15,7 @@ app.use(cors({
 // root route
 app.get("/", (req, res) => {
   res.send("hello this is server");
+  console.log("hii")
 });
 
 // routes
