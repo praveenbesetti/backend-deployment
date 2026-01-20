@@ -54,5 +54,5 @@ jobs:
             # 6. PM2 Management
             # We use 'delete' then 'start' to ensure a clean slate every time
             pm2 delete my-server || true
-            pm2 start index.js --name "my-server"
+            pm2 start server.js --name "my-server"
             pm2 save
