@@ -1,67 +1,33 @@
-name: Deploy to EC2 (develop branch)
+name: Deploy to GCP VM
 
 on:
   push:
-    branches:
-      - develop
+    branches: [ main ]
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
-
-    env:
-      AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
-      AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      EC2_HOST: ${{ secrets.EC2_HOST }}
-      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-      EC2_USER: ${{ secrets.EC2_USER }}
-      MONGO_URI: ${{ secrets.MONGO_URI }}
-      S3_BUCKET: ${{ secrets.S3_BUCKET }}
-      PORT: ${{secrets.PORT}}
-
     steps:
-      - name: Checkout code
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: npm install
+      - name: Run Tests
+        run: npm test
+
+  deploy:
+    needs: test # This means: Only run deploy if 'test' passes!
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Deploy application
-        run: |
-          ssh -T ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
-            set -e
-            DEPLOY_DIR="/var/www/backend-deployment"
-            mkdir -p \$DEPLOY_DIR
-            cd \$DEPLOY_DIR
-
-            if [ ! -d .git ]; then
-              echo 'Performing initial git clone...'
-              git clone https://github.com/praveenbesetti/backend-deployment.git .
-              git checkout develop
-            else
-              echo 'Updating existing repository...'
-              git fetch origin develop
-              git reset --hard origin/develop
-            fi
-
-            echo 'Installing production dependencies...'
-            npm install --omit=dev
-
-            echo 'Restarting/Starting application with PM2...'
-            # Export secrets into EC2 runtime before pm2
-            export AWS_ACCESS_KEY="${AWS_ACCESS_KEY}"
-            export AWS_SECRET_KEY="${AWS_SECRET_KEY}"
-            export AWS_REGION="${AWS_REGION}"
-            export MONGO_URI="${MONGO_URI}"
-            export S3_BUCKET="${S3_BUCKET}"
-
-            pm2 restart backend --update-env || pm2 start server.js --name backend --update-env
-
-            pm2 save   # optional: persist env snapshot
-            echo 'Deployment successful.'
-          EOF
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.GCP_VM_IP }}
+          username: ${{ secrets.GCP_USERNAME }}
+          key: ${{ secrets.GCP_SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.GCP_USERNAME }}/my-app
+            git pull origin main
+            npm install --production
+            pm2 restart all || pm2 start index.js --name "my-server"
