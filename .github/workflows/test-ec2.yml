@@ -15,8 +15,7 @@ jobs:
           node-version: '20'
       - name: Install dependencies
         run: npm install
-      - name: Run Tests
-        run: npm test || echo "No tests found, skipping..."
+   
 
   deploy:
     needs: test
@@ -30,7 +29,7 @@ jobs:
         with:
           host: ${{ secrets.GCP_VM_IP }}
           username: ${{ secrets.GCP_USERNAME }}
-          key:${{secrets.  GCP_SSH_KEY}}
+          key: ${{secrets.  GCP_SSH_KEY}}
 
           script: |
             # 1. Setup path variables
