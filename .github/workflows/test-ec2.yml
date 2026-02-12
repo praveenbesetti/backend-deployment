@@ -1,58 +1,48 @@
-name: Deploy to GCP VM
-
+name: Secure Deploy to GCP
 on:
   push:
-    branches: [ develop ]
+    branches: [ main ]
 
 jobs:
-  test:
+  deploy:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
         with:
-          node-version: '20'
-      - name: Install dependencies
-        run: npm install
-   
-  deploy:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+          # Using the project number for WIF and project ID for the account
+          workload_identity_provider: 'projects/300154363292/locations/global/workloadIdentityPools/github-actions/providers/github-pool'
+          service_account: 'github-deployer@secure-487209.iam.gserviceaccount.com'
 
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.GCP_VM_IP }}
-          username: ${{ secrets.GCP_USERNAME }}
-          key: ${{ secrets.GCP_SSH_KEY }} # Fixed the space here
-          script: |
-            # 1. Setup path variables
-            APP_DIR="/home/${{ secrets.GCP_USERNAME }}/my-app"
-            
-            # 2. Backup .env if it exists
-            if [ -f "$APP_DIR/.env" ]; then
-                cp "$APP_DIR/.env" ~/env_backup
-            fi
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
-            # 3. Delete old folders and Fresh Clone
-            rm -rf "$APP_DIR"
-            git clone -b develop https://github.com/${{ github.repository }}.git "$APP_DIR"
-            
-            # 4. Restore .env
-            if [ -f ~/env_backup ]; then
-                mv ~/env_backup "$APP_DIR/.env"
-            fi
+      - name: Build and Push Docker
+        run: |
+          gcloud auth configure-docker us-central1-docker.pkg.dev
+          # Replace 'your-project' and 'app-repo' with your actual names
+          docker build -t us-central1-docker.pkg.dev/secure-487209/app-repo/app:${{ github.sha }} .
+          docker push us-central1-docker.pkg.dev/secure-487209/app-repo/app:${{ github.sha }}
 
-            # 5. Install and Start
-            cd "$APP_DIR"
-            npm install --production
-            
-            # 6. PM2 Management
-            # We use 'delete' then 'start' to ensure a clean slate every time
-            pm2 delete my-server || true
-            pm2 start server.js --name "my-server"
-            pm2 save
+      - name: Update VM Group
+        run: |
+          # 1. Create a unique template name
+          TEMPLATE_NAME="app-template-${{ github.sha }}"
+          
+          # 2. Create the template (Ensure vm-runner email is correct)
+          gcloud compute instance-templates create-with-container "instance-template-20260212-093835" \
+            --container-image=us-central1-docker.pkg.dev/secure-487209/app-repo/app:${{ github.sha }} \
+            --service-account=vm-runner@secure-487209.iam.gserviceaccount.com \
+            --region=us-central1
+
+          # 3. Update the Managed Instance Group
+          # Replace 'your-vm-group' with your actual MIG name
+          gcloud compute instance-groups managed rolling-action start-update your-vm-group \
+            --version=template="instance-template-20260212-093835" \
+            --region=asia-south1
