@@ -20,17 +20,15 @@ jobs:
       uses: 'google-github-actions/auth@v2'
       with:
         token_format: 'access_token'
-        # Resource Name format (No https)
         workload_identity_provider: 'projects/300154363292/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
         service_account: 'vm-runner@secure-487209.iam.gserviceaccount.com'
-        # Audience URL format (Must have https://)
+        # Explicitly setting the audience helps Google verify the token source
         audience: 'https://iam.googleapis.com/projects/300154363292/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
 
-    # 2. Login to Docker DIRECTLY
     - name: 'Docker Auth'
       run: |-
-        echo "${{ steps.auth.outputs.access_token }}" | docker login -u oauth2access_token --password-stdin https://asia-south1-docker.pkg.dev
-
+        # Using 'oauth2accesstoken' (one word, no 's') is the exact username GAR expects
+        echo "${{ steps.auth.outputs.access_token }}" | docker login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
     # 3. Build and Push
     - name: 'Build and Push Image'
       run: |-
