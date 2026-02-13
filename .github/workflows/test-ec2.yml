@@ -37,30 +37,32 @@ jobs:
 
     - name: 'Update VM Deployment'
       run: |-
-        # 1. Create the script file
         cat <<EOF > startup.sh
         #! /bin/bash
-        # Log everything to a file so we can see it
         exec > /tmp/startup-log.txt 2>&1
         
         echo "Starting deployment script..."
         
-        # Cleanup
+        # 1. Cleanup
         rm -rf /tmp/nginx.conf
         docker stop my-app nginx-proxy || true
         docker rm my-app nginx-proxy || true
 
-        # Auth
-        TOKEN=\$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | cut -d'\"' -f4)
+        # 2. Authenticate using AWK (more reliable than cut on COS)
+        TOKEN=\$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | awk -F'\"' '{print \$4}')
+        
+        # Use a writable config directory
+        mkdir -p /home/praveenbesetti09/.docker
         echo "\$TOKEN" | docker --config /home/praveenbesetti09/.docker login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
 
-        # Pull and Run
+        # 3. Pull and Run
         IMAGE="asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}"
         docker --config /home/praveenbesetti09/.docker pull \$IMAGE
         
+        # Run App
         docker run -d --name my-app --restart always -p 5000:5000 \$IMAGE
 
-        # Nginx config
+        # 4. Setup Nginx
         cat <<EOT > /tmp/nginx.conf
         events {}
         http {
@@ -78,12 +80,9 @@ jobs:
         echo "Deployment finished."
         EOF
 
-        # 2. FORCE update the metadata (Remove then Add)
+        # Force update metadata
         gcloud compute instances remove-metadata instance-20260213-035410 --zone=asia-south1-a --keys=startup-script || true
-        
-        gcloud compute instances add-metadata instance-20260213-035410 \
-          --zone=asia-south1-a \
-          --metadata-from-file=startup-script=startup.sh
+        gcloud compute instances add-metadata instance-20260213-035410 --zone=asia-south1-a --metadata-from-file=startup-script=startup.sh
 
-        # 3. Reset
+        # Reset
         gcloud compute instances reset instance-20260213-035410 --zone=asia-south1-a
