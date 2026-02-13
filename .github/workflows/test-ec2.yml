@@ -37,25 +37,26 @@ jobs:
 
     - name: 'Update VM Deployment'
       run: |-
-        # This script is now much simpler because of your "Full Access" change
-        STARTUP_SCRIPT="#! /bin/bash
-        # 1. Tell Docker to use the VM's built-in Editor identity
+        # 1. Create the script file locally in the GitHub runner
+        cat <<EOF > startup.sh
+        #! /bin/bash
+        # Configure Docker to use the VM's "Full Access" identity
         /usr/bin/docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
         
-        # 2. Pull the new image
-        IMAGE=\"asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}\"
-        docker pull \$IMAGE
+        # Define the image
+        IMAGE="asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}"
         
-        # 3. Clean up old containers
+        # Pull, Stop, and Run
+        docker pull \$IMAGE
         docker stop my-app nginx-proxy || true
         docker rm my-app nginx-proxy || true
         
-        # 4. Run the app
+        # Run App
         docker run -d --name my-app --restart always -p 5000:5000 \$IMAGE
         
-        # 5. Setup Nginx (Cleaning up the old directory error)
+        # Setup Nginx
         rm -rf /tmp/nginx.conf
-        cat <<EOF > /tmp/nginx.conf
+        cat <<EOT > /tmp/nginx.conf
         events {}
         http {
             server {
@@ -66,17 +67,15 @@ jobs:
                 }
             }
         }
-        EOF
+        EOT
         
-        docker run -d --name nginx-proxy --restart always -p 80:80 -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro nginx:alpine"
+        docker run -d --name nginx-proxy --restart always -p 80:80 -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro nginx:alpine
+        EOF
 
-        # Apply to VM
+        # 2. Upload the file to VM metadata
         gcloud compute instances add-metadata instance-20260213-035410 \
           --zone=asia-south1-a \
-          --metadata=startup-script="\$STARTUP_SCRIPT"
-
-        # Reset to trigger
-        gcloud compute instances reset instance-20260213-035410 --zone=asia-south1-a
           --metadata-from-file=startup-script=startup.sh
 
+        # 3. Reset the VM to start the script
         gcloud compute instances reset instance-20260213-035410 --zone=asia-south1-a
