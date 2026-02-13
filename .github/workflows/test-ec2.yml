@@ -20,10 +20,11 @@ jobs:
     - id: 'auth'
       uses: 'google-github-actions/auth@v2'
       with:
-        token_format: 'access_token' # This is the magic line
-        workload_identity_provider: 'projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+        # DO NOT put quotes around the number, keep the whole string in single quotes
+        workload_identity_provider: 'projects/123456789012/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
         service_account: 'vm-runner@secure-487209.iam.gserviceaccount.com'
-
+        # Adding audience explicitly sometimes fixes the 'invalid_request'
+        audience: 'https://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
     # 2. Login to Docker DIRECTLY (No gcloud helper)
     - name: 'Docker Auth'
       run: |-
