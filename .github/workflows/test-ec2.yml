@@ -1,48 +1,77 @@
-name: Secure Deploy to GCP
+name: Build and Deploy to Private VM
+
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ] # Triggers whenever you push to the main branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
-      contents: read
+      contents: 'read'
+      id-token: 'write' # Required for Workload Identity Federation
 
     steps:
-      - uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-      - id: auth
-        uses: google-github-actions/auth@v2
-        with:
-          # Using the project number for WIF and project ID for the account
-          workload_identity_provider: 'projects/300154363292/locations/global/workloadIdentityPools/github-actions/providers/github-pool'
-          service_account: 'github-deployer@secure-487209.iam.gserviceaccount.com'
+    # 1. Authenticate with Google Cloud using WIF
+    - id: 'auth'
+      uses: 'google-github-actions/auth@v2'
+      with:
+        workload_identity_provider: 'projects/707331fd/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+        service_account: 'vm-runner@secure-487209.iam.gserviceaccount.com'
 
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+    # 2. Setup Google Cloud SDK
+    - name: 'Set up Cloud SDK'
+      uses: 'google-github-actions/setup-gcloud@v2'
 
-      - name: Build and Push Docker
-        run: |
-          gcloud auth configure-docker us-central1-docker.pkg.dev
-          # Replace 'your-project' and 'app-repo' with your actual names
-          docker build -t us-central1-docker.pkg.dev/secure-487209/app-repo/app:${{ github.sha }} .
-          docker push us-central1-docker.pkg.dev/secure-487209/app-repo/app:${{ github.sha }}
+    # 3. Configure Docker for Artifact Registry
+    - name: 'Docker Auth'
+      run: |-
+        gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
 
-      - name: Update VM Group
-        run: |
-          # 1. Create a unique template name
-          TEMPLATE_NAME="app-template-${{ github.sha }}"
+    # 4. Build and Push the Docker Image
+    - name: 'Build and Push Image'
+      run: |-
+        docker build -t asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }} .
+        docker push asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}
+
+    # 5. Update VM Metadata and Restart
+    # This replaces the startup-script on the VM with the one using the NEW image tag
+    - name: 'Update VM Deployment'
+      run: |-
+        gcloud compute instances add-metadata my-app-server \
+          --zone=asia-south1-a \
+          --metadata=startup-script="#! /bin/bash
+          docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
+          docker stop my-app nginx-proxy || true
+          docker rm my-app nginx-proxy || true
           
-          # 2. Create the template (Ensure vm-runner email is correct)
-          gcloud compute instance-templates create-with-container "instance-template-20260212-093835" \
-            --container-image=us-central1-docker.pkg.dev/secure-487209/app-repo/app:${{ github.sha }} \
-            --service-account=vm-runner@secure-487209.iam.gserviceaccount.com \
-            --region=us-central1
+          # Pull the specific version we just built
+          docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}
+          
+          # Run the App
+          docker run -d --name my-app --restart always -p 5000:5000 \
+            asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}
+          
+          # Setup Nginx
+          cat <<EOF > /tmp/nginx.conf
+          events {}
+          http {
+              server {
+                  listen 80;
+                  location / {
+                      proxy_pass http://localhost:5000;
+                      proxy_set_header Host \$host;
+                  }
+              }
+          }
+          EOF
+          
+          # Run Nginx
+          docker run -d --name nginx-proxy --restart always -p 80:80 \
+            -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro nginx:alpine"
 
-          # 3. Update the Managed Instance Group
-          # Replace 'your-vm-group' with your actual MIG name
-          gcloud compute instance-groups managed rolling-action start-update your-vm-group \
-            --version=template="instance-template-20260212-093835" \
-            --region=asia-south1
+        # Restart the VM to trigger the new startup script
+        gcloud compute instances reset instance-20260213-035410 --zone=asia-south1-a
