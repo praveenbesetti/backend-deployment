@@ -37,25 +37,30 @@ jobs:
 
     - name: 'Update VM Deployment'
       run: |-
-        # 1. Create the script file locally in the GitHub runner
+        # 1. Create the script file
         cat <<EOF > startup.sh
         #! /bin/bash
-        # Configure Docker to use the VM's "Full Access" identity
-        /usr/bin/docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
+        # Log everything to a file so we can see it
+        exec > /tmp/startup-log.txt 2>&1
         
-        # Define the image
-        IMAGE="asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}"
+        echo "Starting deployment script..."
         
-        # Pull, Stop, and Run
-        docker pull \$IMAGE
+        # Cleanup
+        rm -rf /tmp/nginx.conf
         docker stop my-app nginx-proxy || true
         docker rm my-app nginx-proxy || true
+
+        # Auth
+        TOKEN=\$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | cut -d'\"' -f4)
+        echo "\$TOKEN" | docker --config /home/praveenbesetti09/.docker login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
+
+        # Pull and Run
+        IMAGE="asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}"
+        docker --config /home/praveenbesetti09/.docker pull \$IMAGE
         
-        # Run App
         docker run -d --name my-app --restart always -p 5000:5000 \$IMAGE
-        
-        # Setup Nginx
-        rm -rf /tmp/nginx.conf
+
+        # Nginx config
         cat <<EOT > /tmp/nginx.conf
         events {}
         http {
@@ -68,14 +73,17 @@ jobs:
             }
         }
         EOT
-        
+
         docker run -d --name nginx-proxy --restart always -p 80:80 -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro nginx:alpine
+        echo "Deployment finished."
         EOF
 
-        # 2. Upload the file to VM metadata
+        # 2. FORCE update the metadata (Remove then Add)
+        gcloud compute instances remove-metadata instance-20260213-035410 --zone=asia-south1-a --keys=startup-script || true
+        
         gcloud compute instances add-metadata instance-20260213-035410 \
           --zone=asia-south1-a \
           --metadata-from-file=startup-script=startup.sh
 
-        # 3. Reset the VM to start the script
+        # 3. Reset
         gcloud compute instances reset instance-20260213-035410 --zone=asia-south1-a
