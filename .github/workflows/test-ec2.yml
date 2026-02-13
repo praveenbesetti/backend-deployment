@@ -35,33 +35,44 @@ jobs:
         docker build -t asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }} .
         docker push asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}
 
-    # 4. Update VM and Restart
     - name: 'Update VM Deployment'
-      uses: 'google-github-actions/setup-gcloud@v2'
-
-    - name: 'Apply Startup Script'
       run: |-
+        # We define the script as a variable to keep the gcloud command clean
+        STARTUP_SCRIPT="#! /bin/bash
+        # 1. Direct login using the VM's own identity (bypasses read-only config issues)
+        ACCESS_TOKEN=\$(curl -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | grep -oP '\"access_token\":\"\K[^\"]+')
+        echo \"\$ACCESS_TOKEN\" | docker login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
+
+        # 2. Stop and Clean
+        docker stop my-app nginx-proxy || true
+        docker rm my-app nginx-proxy || true
+        
+        # 3. Pull and Run App
+        docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}
+        docker run -d --name my-app --restart always -p 5000:5000 \
+          asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}
+        
+        # 4. Setup Nginx
+        cat <<EOF > /tmp/nginx.conf
+        events {}
+        http {
+            server {
+                listen 80;
+                location / {
+                    proxy_pass http://localhost:5000;
+                    proxy_set_header Host \$host;
+                }
+            }
+        }
+        EOF
+        
+        docker run -d --name nginx-proxy --restart always -p 80:80 \
+          -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro nginx:alpine"
+
+        # Apply the metadata
         gcloud compute instances add-metadata instance-20260213-035410 \
           --zone=asia-south1-a \
-          --metadata=startup-script="#! /bin/bash
-          docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
-          docker stop my-app nginx-proxy || true
-          docker rm my-app nginx-proxy || true
-          docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}
-          docker run -d --name my-app --restart always -p 5000:5000 asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}
-          cat <<EOF > /tmp/nginx.conf
-          events {}
-          http {
-              server {
-                  listen 80;
-                  location / {
-                      proxy_pass http://localhost:5000;
-                      proxy_set_header Host \$host;
-                  }
-              }
-          }
-          EOF
-          docker run -d --name nginx-proxy --restart always -p 80:80 -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro nginx:alpine"
+          --metadata=startup-script="\$STARTUP_SCRIPT"
 
-        # Force reset to pull the new container
+        # Trigger the script immediately
         gcloud compute instances reset instance-20260213-035410 --zone=asia-south1-a
