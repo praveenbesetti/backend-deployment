@@ -37,22 +37,26 @@ jobs:
 
     - name: 'Update VM Deployment'
       run: |-
-        # We define the script as a variable to keep the gcloud command clean
+        # 1. We create the script as a single variable. 
+        # Note: We use \ for $ that the VM should handle, and no \ for GitHub variables.
         STARTUP_SCRIPT="#! /bin/bash
-        # 1. Direct login using the VM's own identity (bypasses read-only config issues)
-        ACCESS_TOKEN=\$(curl -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | grep -oP '\"access_token\":\"\K[^\"]+')
-        echo \"\$ACCESS_TOKEN\" | docker login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
+        mkdir -p /tmp/docker_config
+        
+        # VM-level variable: needs backslash so GitHub ignores it
+        TOKEN=\$(curl -s -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | grep -oP '\"access_token\":\"\K[^\"]+')
+        
+        # GitHub-level variable: no backslash so GitHub replaces it now
+        IMAGE_NAME=\"asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}\"
 
-        # 2. Stop and Clean
+        echo \"\$TOKEN\" | docker --config /tmp/docker_config login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
+        
+        docker --config /tmp/docker_config pull \$IMAGE_NAME
+        
         docker stop my-app nginx-proxy || true
         docker rm my-app nginx-proxy || true
         
-        # 3. Pull and Run App
-        docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}
-        docker run -d --name my-app --restart always -p 5000:5000 \
-          asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}
+        docker run -d --name my-app --restart always -p 5000:5000 \$IMAGE_NAME
         
-        # 4. Setup Nginx
         cat <<EOF > /tmp/nginx.conf
         events {}
         http {
@@ -60,19 +64,18 @@ jobs:
                 listen 80;
                 location / {
                     proxy_pass http://localhost:5000;
-                    proxy_set_header Host \$host;
+                    proxy_set_header Host \\\$host;
                 }
             }
         }
         EOF
         
-        docker run -d --name nginx-proxy --restart always -p 80:80 \
-          -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro nginx:alpine"
+        docker run -d --name nginx-proxy --restart always -p 80:80 -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro nginx:alpine"
 
-        # Apply the metadata
+        # 2. Push the script to the VM metadata
         gcloud compute instances add-metadata instance-20260213-035410 \
           --zone=asia-south1-a \
           --metadata=startup-script="\$STARTUP_SCRIPT"
 
-        # Trigger the script immediately
+        # 3. Force the VM to run the new script
         gcloud compute instances reset instance-20260213-035410 --zone=asia-south1-a
