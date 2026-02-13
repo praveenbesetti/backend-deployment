@@ -37,45 +37,48 @@ jobs:
 
     - name: 'Update VM Deployment'
       run: |-
-        # 1. We create the script as a single variable. 
-        # Note: We use \ for $ that the VM should handle, and no \ for GitHub variables.
-        STARTUP_SCRIPT="#! /bin/bash
-        mkdir -p /tmp/docker_config
-        
-        # VM-level variable: needs backslash so GitHub ignores it
-        TOKEN=\$(curl -s -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | grep -oP '\"access_token\":\"\K[^\"]+')
-        
-        # GitHub-level variable: no backslash so GitHub replaces it now
-        IMAGE_NAME=\"asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}\"
+        # 1. Create a Cloud-Config file
+        # This tells COS exactly what to do without using a broken shell script
+        cat <<EOF > cloud-config.yaml
+        #cloud-config
+        write_files:
+          - path: /etc/systemd/system/my-app.service
+            permissions: '0644'
+            content: |
+              [Unit]
+              Description=Run my app container
+              Wants=gcr-online.target
+              After=gcr-online.target
 
-        echo \"\$TOKEN\" | docker --config /tmp/docker_config login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
-        
-        docker --config /tmp/docker_config pull \$IMAGE_NAME
-        
-        docker stop my-app nginx-proxy || true
-        docker rm my-app nginx-proxy || true
-        
-        docker run -d --name my-app --restart always -p 5000:5000 \$IMAGE_NAME
-        
-        cat <<EOF > /tmp/nginx.conf
-        events {}
-        http {
-            server {
-                listen 80;
-                location / {
-                    proxy_pass http://localhost:5000;
-                    proxy_set_header Host \\\$host;
-                }
-            }
-        }
+              [Service]
+              Environment="HOME=/home/chronos"
+              ExecStartPre=/usr/bin/docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
+              ExecStart=/usr/bin/docker run --name=my-app -p 5000:5000 asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}
+              ExecStop=/usr/bin/docker stop my-app
+              ExecStopPost=/usr/bin/docker rm my-app
+
+          - path: /etc/systemd/system/nginx-proxy.service
+            permissions: '0644'
+            content: |
+              [Unit]
+              Description=Run nginx proxy
+              After=my-app.service
+
+              [Service]
+              ExecStart=/usr/bin/docker run --name=nginx-proxy -p 80:80 nginx:alpine
+              ExecStop=/usr/bin/docker stop nginx-proxy
+              ExecStopPost=/usr/bin/docker rm nginx-proxy
+
+        runcmd:
+          - systemctl daemon-reload
+          - systemctl start my-app.service
+          - systemctl start nginx-proxy.service
         EOF
-        
-        docker run -d --name nginx-proxy --restart always -p 80:80 -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro nginx:alpine"
 
-        # 2. Push the script to the VM metadata
+        # 2. Apply this to the VM as 'user-data' (The COS way)
         gcloud compute instances add-metadata instance-20260213-035410 \
           --zone=asia-south1-a \
-          --metadata=startup-script="\$STARTUP_SCRIPT"
+          --metadata-from-file=user-data=cloud-config.yaml
 
-        # 3. Force the VM to run the new script
+        # 3. Reset the VM
         gcloud compute instances reset instance-20260213-035410 --zone=asia-south1-a
