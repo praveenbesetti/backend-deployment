@@ -49,12 +49,13 @@ jobs:
             --project=secure-487209 \
             --quiet \
             --command="
-              # THIS IS THE KEY: Authenticate the VM's docker to the registry
-              sudo /usr/bin/docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
+              # 1. Login using the VM's built-in token (Works on Read-Only FS)
+              sudo docker login -u oauth2access -p \$(gcloud auth print-access-token) https://asia-south1-docker.pkg.dev
 
-              # Now pull will work
+              # 2. Pull the image
               sudo docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
 
+              # 3. Refresh Container
               sudo docker stop my-app || true
               sudo docker rm my-app || true
 
