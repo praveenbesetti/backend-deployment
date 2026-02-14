@@ -35,36 +35,28 @@ jobs:
       - name: Create folder and Copy Configs
         run: |
           # 1. Create the folder on the VM
-          gcloud compute ssh instance-20260214-054001 --zone=asia-south2-a --project=secure-487209 --quiet --command="mkdir -p ~/app"
+          gcloud compute ssh instance-20260214-105733 --zone=asia-south2-a --project=secure-487209 --quiet --command="mkdir -p ~/app"
           
           # 2. Now copy the files into that folder
-          gcloud compute scp docker-compose.yml nginx.conf instance-20260214-054001:~/app/ --zone=asia-south2-a --project=secure-487209 --quiet
+          gcloud compute scp docker-compose.yml nginx.conf instance-20260214-105733:~/app/ --zone=asia-south2-a --project=secure-487209 --quiet
 
       # 3. RESTART
       # 3. TELL VM TO REFRESH (COS Way)
-      - name: Deploy to COS
+      - name: Deploy to Ubuntu
         run: |
-          gcloud compute ssh instance-20260214-054001 \
+          gcloud compute ssh instance-20260214-105733 \
             --zone=asia-south2-a \
             --project=secure-487209 \
             --quiet \
             --command="
-              # 1. Point to a writable directory so we don't hit the 'Read-Only' error
-              export DOCKER_CONFIG=/tmp/docker-config
-              mkdir -p /tmp/docker-config
+              # 1. Login Docker ON THE VM (Standard way works on Ubuntu)
+              gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
 
-              # 2. Use the COS-native helper (This replaces 'gcloud auth configure-docker')
-              /usr/bin/docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
+              # 2. Go to app folder
+              cd ~/app
 
-              # 3. Pull the image (using the writable config we just made)
-              sudo DOCKER_CONFIG=/tmp/docker-config docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
-
-              # 4. Restart your app
-              sudo docker stop my-app || true
-              sudo docker rm my-app || true
-              sudo docker run -d \
-                --name my-app \
-                --restart always \
-                -p 80:5000 \
-                asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
+              # 3. Use Compose to pull new image and restart services
+              # This will automatically use your docker-compose.yml
+              sudo docker-compose pull
+              sudo docker-compose up -d
             "
