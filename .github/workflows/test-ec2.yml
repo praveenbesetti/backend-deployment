@@ -1,88 +1,46 @@
-name: Build and Deploy to Private VM
+name: Push and Deploy
 
 on:
   push:
-    branches: [ "develop" ] # Ensure this matches your branch name
+    branches:
+      - main  # This is the "Trigger"
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
-    permissions:
-      contents: 'read'
-      id-token: 'write' # Mandatory for OIDC/WIF
-
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    # 1. Authenticate with Google Cloud
-    - id: 'auth'
-      uses: 'google-github-actions/auth@v2'
-      with:
-        token_format: 'access_token'
-        workload_identity_provider: 'projects/300154363292/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
-        service_account: 'vm-runner@secure-487209.iam.gserviceaccount.com'
-        # Explicitly setting the audience helps Google verify the token source
-        audience: 'https://iam.googleapis.com/projects/300154363292/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+      - name: Auth Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-    - name: 'Docker Auth'
-      run: |-
-        # Using 'oauth2accesstoken' (one word, no 's') is the exact username GAR expects
-        echo "${{ steps.auth.outputs.access_token }}" | docker login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
-    # 3. Build and Push
-    - name: 'Build and Push Image'
-      run: |-
-        docker build -t asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }} .
-        docker push asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
-    - name: 'Update VM Deployment'
-      run: |-
-        cat <<EOF > startup.sh
-        #! /bin/bash
-        exec > /tmp/startup-log.txt 2>&1
-        
-        echo "Starting deployment script..."
-        
-        # 1. Cleanup
-        rm -rf /tmp/nginx.conf
-        docker stop my-app nginx-proxy || true
-        docker rm my-app nginx-proxy || true
+      - name: Configure Docker
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev
 
-        # 2. Authenticate using AWK (more reliable than cut on COS)
-        TOKEN=\$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | awk -F'\"' '{print \$4}')
-        
-        # Use a writable config directory
-        mkdir -p /home/praveenbesetti09/.docker
-        echo "\$TOKEN" | docker --config /home/praveenbesetti09/.docker login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
+      # 1. BUILD AND PUSH THE IMAGE
+      - name: Build and Push
+        run: |
+          IMAGE=asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
+          docker build -t $IMAGE .
+          docker push $IMAGE
 
-        # 3. Pull and Run
-        IMAGE="asia-south1-docker.pkg.dev/secure-487209/demo2/app:${{ github.sha }}"
-        docker --config /home/praveenbesetti09/.docker pull \$IMAGE
-        
-        # Run App
-        docker run -d --name my-app --restart always -p 5000:5000 \$IMAGE
+      # 2. COPY COMPOSE & NGINX FILES TO VM
+      - name: Copy Configs to VM
+        run: |
+          gcloud compute scp docker-compose.yml nginx.conf my-vm-name:~/app/ --zone asia-south1-a
 
-        # 4. Setup Nginx
-        cat <<EOT > /tmp/nginx.conf
-        events {}
-        http {
-            server {
-                listen 80;
-                location / {
-                    proxy_pass http://localhost:5000;
-                    proxy_set_header Host \\\$host;
-                }
-            }
-        }
-        EOT
-
-        docker run -d --name nginx-proxy --restart always -p 80:80 -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro nginx:alpine
-        echo "Deployment finished."
-        EOF
-
-        # Force update metadata
-        gcloud compute instances remove-metadata instance-20260213-035410 --zone=asia-south1-a --keys=startup-script || true
-        gcloud compute instances add-metadata instance-20260213-035410 --zone=asia-south1-a --metadata-from-file=startup-script=startup.sh
-
-        # Reset
-        gcloud compute instances reset instance-20260213-035410 --zone=asia-south1-a
+      # 3. TELL VM TO REFRESH
+      - name: SSH and Restart
+        run: |
+          gcloud compute ssh my-vm-name --zone asia-south1-a --command "
+            cd ~/app
+            docker-compose pull
+            docker-compose up -d
+            docker image prune -f
+          "
