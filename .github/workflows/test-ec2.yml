@@ -49,18 +49,20 @@ jobs:
             --project=secure-487209 \
             --quiet \
             --command="
-              # 1. Tell Docker to use the Google helper for your specific region
-              # This doesn't need a password and works on read-only filesystems
+              # 1. Create a specific config directory in the writable area
+              sudo mkdir -p /var/lib/docker/docker-config
+
+              # 2. Tell the Google Helper to save the 'key' in that writable path
+              # We use DOCKER_CONFIG to point Docker to our new path
+              export DOCKER_CONFIG=/var/lib/docker/docker-config
               sudo docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
 
-              # 2. Pull the image
-              sudo docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
+              # 3. Tell the 'pull' command to also look in that same path for the key
+              sudo DOCKER_CONFIG=/var/lib/docker/docker-config docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
 
-              # 3. Clean up old container
+              # 4. Restart container
               sudo docker stop my-app || true
               sudo docker rm my-app || true
-
-              # 4. Start the new one
               sudo docker run -d \
                 --name my-app \
                 --restart always \
