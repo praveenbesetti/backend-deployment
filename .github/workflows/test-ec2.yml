@@ -33,7 +33,7 @@ jobs:
       # 2. COPY COMPOSE & NGINX FILES TO VM
       - name: Copy Configs to VM
         run: |
-          gcloud compute scp docker-compose.yml nginx.conf my-vm-name:~/app/ --zone asia-south1-a
+          gcloud compute scp docker-compose.yml nginx.conf instance-20260214-054001:~/app/ --zone asia-south2-a
 
       # 3. TELL VM TO REFRESH
       - name: SSH and Restart
