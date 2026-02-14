@@ -38,7 +38,7 @@ jobs:
       # 3. TELL VM TO REFRESH
       - name: SSH and Restart
         run: |
-          gcloud compute ssh my-vm-name --zone asia-south1-a --command "
+          gcloud compute sshinstance-20260214-054001 --zone asia-south2-a --command "
             cd ~/app
             docker-compose pull
             docker-compose up -d
