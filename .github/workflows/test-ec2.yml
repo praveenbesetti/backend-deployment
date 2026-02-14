@@ -49,13 +49,13 @@ jobs:
       # 6. SYNC CONFIGS (IAP Tunnel)
       - name: Create folder and Copy Configs
         run: |
-          gcloud compute scp docker-compose.yml nginx.conf instance-20260214-105733:~/ \
+          gcloud compute scp docker-compose.yml nginx.conf instance-20260214-114156:~/ \
             --zone=asia-south2-a \
             --project=secure-487209 \
             --tunnel-through-iap \
             --quiet
 
-          gcloud compute ssh instance-20260214-105733 \
+          gcloud compute ssh instance-20260214-114156 \
             --zone=asia-south2-a \
             --project=secure-487209 \
             --tunnel-through-iap \
@@ -65,7 +65,7 @@ jobs:
       # 7. DEPLOY
       - name: Deploy to Ubuntu
         run: |
-          gcloud compute ssh instance-20260214-105733 \
+          gcloud compute ssh instance-20260214-114156 \
             --zone=asia-south2-a \
             --project=secure-487209 \
             --tunnel-through-iap \
