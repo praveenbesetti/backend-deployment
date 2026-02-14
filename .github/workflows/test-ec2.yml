@@ -49,16 +49,18 @@ jobs:
             --project=secure-487209 \
             --quiet \
             --command="
-              # 1. Login using the VM's built-in token (Works on Read-Only FS)
-              sudo docker login -u oauth2access -p \$(gcloud auth print-access-token) https://asia-south1-docker.pkg.dev
+              # 1. Use the absolute path to gcloud to get the token
+              TOKEN=\$(/usr/bin/gcloud auth print-access-token)
+              
+              # 2. Login to Docker using that token
+              echo \$TOKEN | sudo docker login -u oauth2access --password-stdin https://asia-south1-docker.pkg.dev
 
-              # 2. Pull the image
+              # 3. Pull and Refresh
               sudo docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
-
-              # 3. Refresh Container
               sudo docker stop my-app || true
               sudo docker rm my-app || true
 
+              # 4. Run the app
               sudo docker run -d \
                 --name my-app \
                 --restart always \
