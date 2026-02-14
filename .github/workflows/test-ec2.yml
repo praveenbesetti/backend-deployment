@@ -42,21 +42,24 @@ jobs:
 
       # 3. RESTART
       # 3. TELL VM TO REFRESH (COS Way)
-      - name: SSH and Restart
+      - name: Deploy to COS
         run: |
           gcloud compute ssh instance-20260214-054001 \
             --zone=asia-south2-a \
             --project=secure-487209 \
             --quiet \
             --command="
-              # 1. Get a temporary password (token) from Google
-              # 2. Log in to Docker using that token without saving a file (--password-stdin)
-              gcloud auth print-access-token | sudo docker login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
+              # 1. Point to a writable directory so we don't hit the 'Read-Only' error
+              export DOCKER_CONFIG=/tmp/docker-config
+              mkdir -p /tmp/docker-config
 
-              # 3. Pull the image (Now it has the 'Token' in memory)
-              sudo docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
+              # 2. Use the COS-native helper (This replaces 'gcloud auth configure-docker')
+              /usr/bin/docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
 
-              # 4. Standard Cleanup and Run
+              # 3. Pull the image (using the writable config we just made)
+              sudo DOCKER_CONFIG=/tmp/docker-config docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
+
+              # 4. Restart your app
               sudo docker stop my-app || true
               sudo docker rm my-app || true
               sudo docker run -d \
