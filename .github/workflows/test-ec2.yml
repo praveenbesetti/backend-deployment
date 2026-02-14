@@ -41,10 +41,25 @@ jobs:
           gcloud compute scp docker-compose.yml nginx.conf instance-20260214-054001:~/app/ --zone=asia-south2-a --project=secure-487209 --quiet
 
       # 3. RESTART
+      # 3. TELL VM TO REFRESH (COS Way)
       - name: SSH and Restart
         run: |
-          gcloud compute ssh instance-20260214-054001 --zone=asia-south2-a --project=secure-487209 --quiet --command="
-            cd ~/app
-            sudo docker-compose pull
-            sudo docker-compose up -d
-          "
+          gcloud compute ssh instance-20260214-054001 \
+            --zone=asia-south2-a \
+            --project=secure-487209 \
+            --quiet \
+            --command="
+              # 1. Pull the new image
+              sudo docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
+
+              # 2. Stop and remove the old container if it exists
+              sudo docker stop my-app || true
+              sudo docker rm my-app || true
+
+              # 3. Run the new container
+              sudo docker run -d \
+                --name my-app \
+                --restart always \
+                -p 80:5000 \
+                asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
+            "
