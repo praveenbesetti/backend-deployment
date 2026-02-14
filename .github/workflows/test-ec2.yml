@@ -3,60 +3,69 @@ name: Push and Deploy
 on:
   push:
     branches:
-      - develop  # This is the "Trigger"
+      - develop
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
+      # CRITICAL: You need this to get your Dockerfile and code!
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 1. AUTH VIA WIF
       - name: Auth Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
         with:
           project_id: 'secure-487209'
           workload_identity_provider: 'projects/300154363292/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
-          service_account: 'github-deployer@secure-487209.iam.gserviceaccount.com' # e.g. deploy-sa@secure-487209.iam.gserviceaccount.com
+          service_account: 'github-deployer@secure-487209.iam.gserviceaccount.com'
 
       - name: Setup Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
-      - name: Configure Docker
-        run: gcloud auth configure-docker asia-south1-docker.pkg.dev
 
-      # 1. BUILD AND PUSH THE IMAGE
+      - name: Configure Docker for GitHub Runner
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+
+      # 2. BUILD AND PUSH
       - name: Build and Push
         run: |
           IMAGE=asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
           docker build -t $IMAGE .
           docker push $IMAGE
 
-      # 2. COPY COMPOSE & NGINX FILES TO VM
-      # 2. THE FIX: Create the folder first!
+      # 3. SYNC CONFIGS (Added IAP Tunnel)
       - name: Create folder and Copy Configs
         run: |
-          # 1. Create the folder on the VM
-          gcloud compute ssh instance-20260214-105733 --zone=asia-south2-a --project=secure-487209 --quiet --command="mkdir -p ~/app"
+          # Use --tunnel-through-iap to bypass the closed Port 22
+          gcloud compute ssh instance-20260214-105733 \
+            --zone=asia-south2-a \
+            --project=secure-487209 \
+            --tunnel-through-iap \
+            --quiet \
+            --command="mkdir -p ~/app"
           
-          # 2. Now copy the files into that folder
-          gcloud compute scp docker-compose.yml nginx.conf instance-20260214-105733:~/app/ --zone=asia-south2-a --project=secure-487209 --quiet
+          gcloud compute scp docker-compose.yml nginx.conf instance-20260214-105733:~/app/ \
+            --zone=asia-south2-a \
+            --project=secure-487209 \
+            --tunnel-through-iap \
+            --quiet
 
-      # 3. RESTART
-      # 3. TELL VM TO REFRESH (COS Way)
+      # 4. DEPLOY (Added IAP Tunnel and sudo fix)
       - name: Deploy to Ubuntu
         run: |
           gcloud compute ssh instance-20260214-105733 \
             --zone=asia-south2-a \
             --project=secure-487209 \
+            --tunnel-through-iap \
             --quiet \
             --command="
-              # 1. Login Docker ON THE VM (Standard way works on Ubuntu)
+              # Configure auth for both users to avoid permission denied on pull
               gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
               sudo gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
 
-              # 2. Go to app folder
               cd ~/app
-
-              # 3. Use Compose to pull new image and restart services
-              # This will automatically use your docker-compose.yml
               sudo docker compose pull
               sudo docker compose up -d
             "
