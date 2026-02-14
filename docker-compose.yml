@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  # Your Node.js/Python/Go App
+  my-app:
+    image: asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
+    restart: always
+    # Environment variables for your DB connection
+   
+    # No ports exposed to the internet, only Nginx can see this
+
+  # Your Nginx Proxy (The Bouncer)
+  nginx-proxy:
+    image: nginx:alpine
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - my-app
