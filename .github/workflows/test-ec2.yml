@@ -3,7 +3,7 @@ name: Push and Deploy
 on:
   push:
     branches:
-      - main  # This is the "Trigger"
+      - develop  # This is the "Trigger"
 
 jobs:
   build-and-push:
