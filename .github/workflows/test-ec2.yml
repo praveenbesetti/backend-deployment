@@ -51,6 +51,7 @@ jobs:
             --command="
               # 1. Login Docker ON THE VM (Standard way works on Ubuntu)
               gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+              sudo gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
 
               # 2. Go to app folder
               cd ~/app
