@@ -42,19 +42,23 @@ jobs:
 
       # 3. RESTART
       # 3. TELL VM TO REFRESH (COS Way)
-      - name: Deploy to COS
+      - name: SSH and Restart
         run: |
           gcloud compute ssh instance-20260214-054001 \
             --zone=asia-south2-a \
             --project=secure-487209 \
             --quiet \
             --command="
-              # On COS, this one command is all you need IF permissions are set in GCP Console
+              # 1. Get a temporary password (token) from Google
+              # 2. Log in to Docker using that token without saving a file (--password-stdin)
+              gcloud auth print-access-token | sudo docker login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
+
+              # 3. Pull the image (Now it has the 'Token' in memory)
               sudo docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
 
+              # 4. Standard Cleanup and Run
               sudo docker stop my-app || true
               sudo docker rm my-app || true
-              
               sudo docker run -d \
                 --name my-app \
                 --restart always \
