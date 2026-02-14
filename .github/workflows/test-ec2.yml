@@ -42,27 +42,19 @@ jobs:
 
       # 3. RESTART
       # 3. TELL VM TO REFRESH (COS Way)
-      - name: SSH and Restart
+      - name: Deploy to COS
         run: |
           gcloud compute ssh instance-20260214-054001 \
             --zone=asia-south2-a \
             --project=secure-487209 \
             --quiet \
             --command="
-              # 1. Create a specific config directory in the writable area
-              sudo mkdir -p /var/lib/docker/docker-config
+              # On COS, this one command is all you need IF permissions are set in GCP Console
+              sudo docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
 
-              # 2. Tell the Google Helper to save the 'key' in that writable path
-              # We use DOCKER_CONFIG to point Docker to our new path
-              export DOCKER_CONFIG=/var/lib/docker/docker-config
-              sudo docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
-
-              # 3. Tell the 'pull' command to also look in that same path for the key
-              sudo DOCKER_CONFIG=/var/lib/docker/docker-config docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
-
-              # 4. Restart container
               sudo docker stop my-app || true
               sudo docker rm my-app || true
+              
               sudo docker run -d \
                 --name my-app \
                 --restart always \
