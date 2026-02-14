@@ -31,16 +31,20 @@ jobs:
           docker push $IMAGE
 
       # 2. COPY COMPOSE & NGINX FILES TO VM
-      - name: Copy Configs to VM
+      # 2. THE FIX: Create the folder first!
+      - name: Create folder and Copy Configs
         run: |
-          gcloud compute scp docker-compose.yml nginx.conf instance-20260214-054001:~/app/ --zone asia-south2-a
+          # 1. Create the folder on the VM
+          gcloud compute ssh instance-20260214-054001 --zone=asia-south2-a --project=secure-487209 --quiet --command="mkdir -p ~/app"
+          
+          # 2. Now copy the files into that folder
+          gcloud compute scp docker-compose.yml nginx.conf instance-20260214-054001:~/app/ --zone=asia-south2-a --project=secure-487209 --quiet
 
-      # 3. TELL VM TO REFRESH
+      # 3. RESTART
       - name: SSH and Restart
         run: |
-          gcloud compute ssh instance-20260214-054001 --zone asia-south2-a --command "
+          gcloud compute ssh instance-20260214-054001 --zone=asia-south2-a --project=secure-487209 --quiet --command="
             cd ~/app
-            docker-compose pull
-            docker-compose up -d
-            docker image prune -f
+            sudo docker-compose pull
+            sudo docker-compose up -d
           "
