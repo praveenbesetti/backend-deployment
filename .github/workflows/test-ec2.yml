@@ -9,17 +9,16 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
       - name: Auth Google Cloud
+        id: auth
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          project_id: 'secure-487209'
+          workload_identity_provider: 'projects/300154363292/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-deployer@secure-487209.iam.gserviceaccount.com' # e.g. deploy-sa@secure-487209.iam.gserviceaccount.com
 
       - name: Setup Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
-
       - name: Configure Docker
         run: gcloud auth configure-docker asia-south1-docker.pkg.dev
 
