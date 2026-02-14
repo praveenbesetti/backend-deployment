@@ -36,22 +36,23 @@ jobs:
           docker push $IMAGE
 
       # 3. SYNC CONFIGS (Added IAP Tunnel)
+     # 3. SYNC CONFIGS (Optimized)
       - name: Create folder and Copy Configs
         run: |
-          # Use --tunnel-through-iap to bypass the closed Port 22
-          gcloud compute ssh instance-20260214-105733 \
-            --zone=asia-south2-a \
-            --project=secure-487209 \
-            --tunnel-through-iap \
-            --quiet \
-            --command="mkdir -p ~/app"
-          
-          gcloud compute scp docker-compose.yml nginx.conf instance-20260214-105733:~/app/ \
+          # We can create the folder and SCP in one logic block
+          gcloud compute scp docker-compose.yml nginx.conf instance-20260214-105733:~/ \
             --zone=asia-south2-a \
             --project=secure-487209 \
             --tunnel-through-iap \
             --quiet
 
+          # Move them to the app folder on the VM
+          gcloud compute ssh instance-20260214-105733 \
+            --zone=asia-south2-a \
+            --project=secure-487209 \
+            --tunnel-through-iap \
+            --quiet \
+            --command="mkdir -p ~/app && mv ~/docker-compose.yml ~/nginx.conf ~/app/"
       # 4. DEPLOY (Added IAP Tunnel and sudo fix)
       - name: Deploy to Ubuntu
         run: |
