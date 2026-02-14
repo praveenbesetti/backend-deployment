@@ -49,14 +49,15 @@ jobs:
             --project=secure-487209 \
             --quiet \
             --command="
-              # 1. Pull the new image
+              # THIS IS THE KEY: Authenticate the VM's docker to the registry
+              sudo /usr/bin/docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
+
+              # Now pull will work
               sudo docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
 
-              # 2. Stop and remove the old container if it exists
               sudo docker stop my-app || true
               sudo docker rm my-app || true
 
-              # 3. Run the new container
               sudo docker run -d \
                 --name my-app \
                 --restart always \
