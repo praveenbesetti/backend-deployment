@@ -49,18 +49,18 @@ jobs:
             --project=secure-487209 \
             --quiet \
             --command="
-              # 1. Use the absolute path to gcloud to get the token
-              TOKEN=\$(/usr/bin/gcloud auth print-access-token)
-              
-              # 2. Login to Docker using that token
-              echo \$TOKEN | sudo docker login -u oauth2access --password-stdin https://asia-south1-docker.pkg.dev
+              # 1. Tell Docker to use the Google helper for your specific region
+              # This doesn't need a password and works on read-only filesystems
+              sudo docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
 
-              # 3. Pull and Refresh
+              # 2. Pull the image
               sudo docker pull asia-south1-docker.pkg.dev/secure-487209/demo2/app:latest
+
+              # 3. Clean up old container
               sudo docker stop my-app || true
               sudo docker rm my-app || true
 
-              # 4. Run the app
+              # 4. Start the new one
               sudo docker run -d \
                 --name my-app \
                 --restart always \
